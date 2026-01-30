@@ -2,7 +2,7 @@
 # Author: Atharva Bordavekar
 # Difficulty: Medium
 # Points: 60
-# Vulnerabilities:
+# Vulnerabilities: RCE via command injection, Reverse Engineering
 
 # Phase 1 - Reconnaissance:
 nmap scan:
@@ -36,9 +36,11 @@ get msg_for_administrator
 ```
 ![admin](https://github.com/realatharva15/athena_writeup/blob/main/images/msgforadmin.png)
 
-we find a message which reveals a hidden directory which can carry out ping command on ip adresses. this is a golden opportunity for command injection! lets try breaking out of the ping command using the ; separator followed by a whoami coommand.
+we find a message which reveals a hidden directory which can carry out ping command on ip adresses. this is a golden opportunity for command injection! lets try breaking out of the ping command using the ; separator followed by a whoami command.
 
 ![failedattempt](https://github.com/realatharva15/athena_writeup/blob/main/images/failedatempt.png)
+
+# Phase 2 - Initial Foothold:
 
 after an hour of manual enumeration by using all command seperators possible and all the ways to bypass filters, i hit a dead end. i even tried using a tool named commix which automates command injection, but failed. i used help from DeepSeek and then it suggested me to use command substitution since it bypasses most of the general RCE filters.
 
@@ -47,6 +49,8 @@ after an hour of manual enumeration by using all command seperators possible and
 127.0.0.1+$(sleep 5)
 ```
 the command injection works as the browser buffers for 5 seconds. now we will craft a reverseshell. since the operators like & are blocked, we will use a simpler reverseshell payload to bypass it
+
+# Shell as www-data:
 
 ```bash
 # first setup a netcat listner:
@@ -58,9 +62,11 @@ nc -lnvp 4444
 ```
 ![RCE](https://github.com/realatharva15/athena_writeup/blob/main/images/RCE.png)
 
-and just like that we have successfully achieved RCE using command substitution and got a shell as www-data! lets start enumerating the system with linpeas. the output shows us a suspicious backup.sh script in the /usr/share/backup directory which is owned by athena and www-data has read/write/execute permissions to it.
+and just like that we have successfully achieved RCE using command substitution and got a shell as www-data! lets start enumerating the system with linpeas. the linpeas output shows us a suspicious backup.sh script in the /usr/share/backup directory which is owned by athena and www-data has read/write/execute permissions to it.
 
 ![backup](https://github.com/realatharva15/athena_writeup/blob/main/images/backup.png)
+
+# Shell as athena:
 
 we will simply append a reverseshell into the existing script. the script must run automatically. i scanned the machine using pspy64 and found out that the script was running acutomatically.
 
@@ -80,6 +86,8 @@ sudo -l
 ![privesc](https://github.com/realatharva15/athena_writeup/blob/main/images/privesc.png)
 
 as you can see, athena can run a binary named venom.ko. lets use the strings command on the binary to find out what is the binary about.
+
+# Phase 3 - ROOT access:
 
 ```bash
 strings venom.ko
@@ -101,7 +109,7 @@ python3 -m http.server 8000
 # on your attacker machine:
 wget http://<target_machine>:8000/venom.ko
 ```
-now launch ghidra and create a new project. import the venom.ko file and start analysing. use the auto analyser feature to speed things up. now we just have to take a look at the function hacked_kill(). 
+launch ghidra and create a new project. import the venom.ko file and start analysing. use the auto analyser feature to speed things up. now we just have to take a look at the function hacked_kill(). 
 
 ![ghidra](https://github.com/realatharva15/athena_writeup/blob/main/images/ghidra.png)
 
